@@ -1,0 +1,639 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String?   @unique
+  name          String?
+  avatar        String?
+  role          UserRole  @default(USER)
+  plan          Plan      @default(FREE)
+  status        Status    @default(ACTIVE)
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  chats         Chat[]
+  images        Image[]
+  documents     Document[]
+  voiceRecords  VoiceRecord[]
+  automations   Automation[]
+  agents        Agent[]
+  apiKeys       ApiKey[]
+  subscriptions Subscription[]
+  payments      Payment[]
+  referrals     Referral[]
+  teamMembers   TeamMember[]
+  notifications Notification[]
+  settings      UserSettings?
+  usageStats    UsageStat[]
+  marketplaceItems MarketplaceItem[]
+  reviews       Review[]
+  downloads     Download[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Chat {
+  id          String    @id @default(cuid())
+  userId      String
+  title       String?
+  model       String    @default("gpt-4")
+  folderId    String?
+  isPinned    Boolean   @default(false)
+  isArchived  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+  folder   ChatFolder? @relation(fields: [folderId], references: [id])
+
+  @@map("chats")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  chatId    String
+  role      String   // user, assistant, system
+  content   String   @db.Text
+  model     String?
+  tokens    Int?
+  latency   Int?     // ms
+  createdAt DateTime @default(now())
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model ChatFolder {
+  id     String @id @default(cuid())
+  userId String
+  name   String
+  color  String @default("#00f0ff")
+  chats  Chat[]
+
+  @@map("chat_folders")
+}
+
+model Prompt {
+  id          String   @id @default(cuid())
+  title       String
+  content     String   @db.Text
+  category    String
+  tags        String[]
+  isPublic    Boolean  @default(false)
+  usageCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("prompts")
+}
+
+model Image {
+  id          String      @id @default(cuid())
+  userId      String
+  prompt      String      @db.Text
+  negativePrompt String?  @db.Text
+  url         String
+  thumbnail   String?
+  width       Int
+  height      Int
+  style       ImageStyle  @default(REALISTIC)
+  model       String      @default("dall-e-3")
+  seed        Int?
+  isPublic    Boolean     @default(false)
+  isFavorite  Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("images")
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  userId      String
+  filename    String
+  originalName String
+  fileType    String   // pdf, docx, pptx, xlsx
+  fileSize    Int
+  url         String
+  content     String?  @db.Text
+  summary     String?  @db.Text
+  extractedData Json?
+  ocrText     String?  @db.Text
+  pageCount   Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analyses DocumentAnalysis[]
+
+  @@map("documents")
+}
+
+model DocumentAnalysis {
+  id         String   @id @default(cuid())
+  documentId String
+  type       String   // summarize, translate, extract, qa, ocr
+  result     String   @db.Text
+  language   String?
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_analyses")
+}
+
+model VoiceRecord {
+  id          String      @id @default(cuid())
+  userId      String
+  type        VoiceType   // stt, tts, clone
+  input       String?     @db.Text
+  output      String?     @db.Text
+  audioUrl    String?
+  duration    Int?        // seconds
+  language    String      @default("en")
+  voiceId     String?
+  createdAt   DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("voice_records")
+}
+
+model Automation {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  trigger     Json     // IF condition
+  actions     Json[]   // THEN actions
+  isActive    Boolean  @default(true)
+  runCount    Int      @default(0)
+  lastRunAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs     AutomationRun[]
+  webhooks Webhook[]
+
+  @@map("automations")
+}
+
+model AutomationRun {
+  id           String    @id @default(cuid())
+  automationId String
+  status       RunStatus @default(PENDING)
+  input        Json?
+  output       Json?
+  error        String?
+  duration     Int?      // ms
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@map("automation_runs")
+}
+
+model Webhook {
+  id           String   @id @default(cuid())
+  automationId String
+  provider     String   // gmail, telegram, slack, etc
+  event        String
+  endpoint     String
+  secret       String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@map("webhooks")
+}
+
+model Agent {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  type        AgentType @default(CUSTOM)
+  description String?
+  config      Json      // agent configuration
+  isActive    Boolean   @default(true)
+  runCount    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks   AgentTask[]
+  collabs AgentCollaboration[]
+
+  @@map("agents")
+}
+
+model AgentTask {
+  id        String    @id @default(cuid())
+  agentId   String
+  name      String
+  status    TaskStatus @default(PENDING)
+  input     Json?
+  output    Json?
+  scheduledAt DateTime?
+  startedAt DateTime?
+  completedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("agent_tasks")
+}
+
+model AgentCollaboration {
+  id        String   @id @default(cuid())
+  agentId   String
+  partnerId String
+  taskId    String?
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+
+  agent   Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  partner Agent @relation("AgentPartner", fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@map("agent_collaborations")
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  key         String   @unique
+  prefix      String
+  permissions String[]
+  rateLimit   Int      @default(100)
+  usageCount  Int      @default(0)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  userId    String
+  plan      Plan
+  status    SubStatus @default(ACTIVE)
+  startDate DateTime @default(now())
+  endDate   DateTime?
+  stripeSubId String?
+  stripePriceId String?
+  cancelAtPeriodEnd Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  userId      String
+  amount      Decimal  @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  status      String   @default("pending")
+  stripePaymentId String?
+  description String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Referral {
+  id          String   @id @default(cuid())
+  userId      String
+  code        String   @unique
+  referredBy  String?
+  rewardEarned Decimal @default(0) @db.Decimal(10, 2)
+  clickCount  Int      @default(0)
+  signupCount Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("referrals")
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  avatar      String?
+  plan        Plan     @default(FREE)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members TeamMember[]
+  projects TeamProject[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id     String     @id @default(cuid())
+  teamId String
+  userId String
+  role   TeamRole   @default(MEMBER)
+  joinedAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+model TeamProject {
+  id          String   @id @default(cuid())
+  teamId      String
+  name        String
+  description String?
+  config      Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("team_projects")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  message   String   @db.Text
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model UserSettings {
+  id              String  @id @default(cuid())
+  userId          String  @unique
+  theme           String  @default("dark")
+  language        String  @default("en")
+  fontSize        String  @default("medium")
+  sidebarCollapsed Boolean @default(false)
+  notifications   Json    @default("{\"email\": true, "push\": true, "sms\": false}")
+  privacy         Json    @default("{\"shareData\": false, "analytics\": true}")
+  aiPreferences   Json    @default("{\"defaultModel\": "gpt-4", "temperature\": 0.7}")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model UsageStat {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // chat, image, code, voice, document
+  count       Int      @default(0)
+  tokens      Int      @default(0)
+  date        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, date])
+  @@map("usage_stats")
+}
+
+model MarketplaceItem {
+  id          String   @id @default(cuid())
+  userId      String
+  type        ItemType @default(PROMPT)
+  title       String
+  description String   @db.Text
+  content     String?  @db.Text
+  price       Decimal  @default(0) @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  tags        String[]
+  category    String
+  thumbnail   String?
+  previewUrl  String?
+  downloadCount Int    @default(0)
+  rating      Decimal  @default(0) @db.Decimal(3, 2)
+  reviewCount Int      @default(0)
+  isPublished Boolean  @default(false)
+  isFeatured  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews  Review[]
+  downloads Download[]
+
+  @@map("marketplace_items")
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  itemId    String
+  rating    Int
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item MarketplaceItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@map("reviews")
+}
+
+model Download {
+  id        String   @id @default(cuid())
+  userId    String
+  itemId    String
+  createdAt DateTime @default(now())
+
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item MarketplaceItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@map("downloads")
+}
+
+model ErrorLog {
+  id        String   @id @default(cuid())
+  type      String
+  message   String   @db.Text
+  stack     String?  @db.Text
+  userId    String?
+  path      String?
+  method    String?
+  userAgent String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@map("error_logs")
+}
+
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("system_configs")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum Status {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  PENDING
+}
+
+enum ImageStyle {
+  REALISTIC
+  ANIME
+  CYBERPUNK
+  PIXAR
+  THREE_D
+  FANTASY
+  ABSTRACT
+  OIL_PAINTING
+  WATERCOLOR
+  SKETCH
+}
+
+enum VoiceType {
+  STT
+  TTS
+  CLONE
+  CALL
+}
+
+enum AgentType {
+  MARKETING
+  TRADING
+  RESEARCH
+  CODING
+  CUSTOMER_SERVICE
+  CUSTOM
+}
+
+enum TaskStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum SubStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAST_DUE
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum ItemType {
+  PROMPT
+  AGENT
+  TOOL
+  TEMPLATE
+  WORKFLOW
+}
